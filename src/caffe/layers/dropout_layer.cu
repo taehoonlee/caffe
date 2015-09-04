@@ -54,8 +54,15 @@ void DropoutLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) {
   if (propagate_down[0]) {
-    const Dtype* top_diff = top[0]->gpu_diff();
-    Dtype* bottom_diff = bottom[0]->mutable_gpu_diff();
+    const Dtype* top_diff;
+    Dtype* bottom_diff;
+    if (this->adversarial) {
+      top_diff = top[0]->gpu_diff2();
+      bottom_diff = bottom[0]->mutable_gpu_diff2();
+    } else {
+      top_diff = top[0]->gpu_diff();
+      bottom_diff = bottom[0]->mutable_gpu_diff();
+    }
     if (this->phase_ == TRAIN) {
       const unsigned int* mask =
           static_cast<const unsigned int*>(rand_vec_.gpu_data());

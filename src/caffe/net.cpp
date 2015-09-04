@@ -660,12 +660,42 @@ void Net<Dtype>::BackwardFromTo(int start, int end) {
   CHECK_LT(start, layers_.size());
   for (int i = start; i >= end; --i) {
     if (layer_need_backward_[i]) {
+      layers_[i]->adversarial = false;
       layers_[i]->Backward(
           top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
       if (debug_info_) { BackwardDebugInfo(i); }
     }
   }
 }
+
+template <typename Dtype>
+void Net<Dtype>::BackwardAdvFromTo(int start, int end) {
+  CHECK_GE(end, 0);
+  CHECK_LT(start, layers_.size());
+  for (int i = start; i >= end; --i) {
+    if (layer_need_backward_[i]) {
+      layers_[i]->adversarial = true;
+      layers_[i]->Backward(
+          top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
+      if (debug_info_) { BackwardDebugInfo(i); }
+    }
+  }
+
+  // FOR DEBUG BY TAEHOON LEE
+  // top_vecs_[1][0]->cpu_diff() = FINAL DIFF
+/*
+  int i = 1;
+  const Dtype* tmp1 = top_vecs_[i][0]->cpu_diff();
+  const Dtype* tmp2 = top_vecs_[i][0]->cpu_diff2();
+  cout << layers_[i]->type() << bottom_vecs_[i].size();
+  for (int j = 0; j < 100; ++j) {
+    if (tmp1[j] - tmp2[j] > 1e-10) cout << "*";
+  }
+  cout << endl;
+*/
+}
+ 
+
 
 template <typename Dtype>
 void Net<Dtype>::InputDebugInfo(const int input_id) {
@@ -808,6 +838,36 @@ void Net<Dtype>::BackwardTo(int end) {
 template <typename Dtype>
 void Net<Dtype>::Backward() {
   BackwardFromTo(layers_.size() - 1, 0);
+  if (debug_info_) {
+    Dtype asum_data = 0, asum_diff = 0, sumsq_data = 0, sumsq_diff = 0;
+    for (int i = 0; i < params_.size(); ++i) {
+      if (param_owners_[i] >= 0) { continue; }
+      asum_data += params_[i]->asum_data();
+      asum_diff += params_[i]->asum_diff();
+      sumsq_data += params_[i]->sumsq_data();
+      sumsq_diff += params_[i]->sumsq_diff();
+    }
+    const Dtype l2norm_data = std::sqrt(sumsq_data);
+    const Dtype l2norm_diff = std::sqrt(sumsq_diff);
+    LOG(ERROR) << "    [Backward] All net params (data, diff): "
+               << "L1 norm = (" << asum_data << ", " << asum_diff << "); "
+               << "L2 norm = (" << l2norm_data << ", " << l2norm_diff << ")";
+  }
+}
+
+template <typename Dtype>
+void Net<Dtype>::BackwardAdvFrom(int start) {
+  BackwardAdvFromTo(start, 0);
+}
+
+template <typename Dtype>
+void Net<Dtype>::BackwardAdvTo(int end) {
+  BackwardAdvFromTo(layers_.size() - 1, end);
+}
+
+template <typename Dtype>
+void Net<Dtype>::BackwardAdv() {
+  BackwardAdvFromTo(layers_.size() - 1, 0);
   if (debug_info_) {
     Dtype asum_data = 0, asum_diff = 0, sumsq_data = 0, sumsq_diff = 0;
     for (int i = 0; i < params_.size(); ++i) {

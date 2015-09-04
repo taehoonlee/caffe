@@ -23,7 +23,9 @@ enum Op {
   replace_cpu,
   replace_gpu,
   replace_cpu_diff,
-  replace_gpu_diff
+  replace_gpu_diff,
+  replace_cpu_diff2,
+  replace_gpu_diff2
 };
 
 template<typename Dtype>
@@ -52,6 +54,12 @@ static void apply_buffers(const vector<Blob<Dtype>*>& blobs,
       case replace_gpu_diff:
         blobs[i]->diff()->set_gpu_data(ptr);
         break;
+      case replace_cpu_diff2:
+        blobs[i]->diff2()->set_cpu_data(ptr);
+        break;
+      case replace_gpu_diff2:
+        blobs[i]->diff2()->set_gpu_data(ptr);
+        break;
     }
     ptr += size;
   }
@@ -74,7 +82,8 @@ template<typename Dtype>
 Params<Dtype>::Params(shared_ptr<Solver<Dtype> > root_solver)
     : size_(total_size<Dtype>(root_solver->net()->learnable_params())),
       data_(),
-      diff_() {
+      diff_(),
+      diff2_() {
 }
 
 template<typename Dtype>
@@ -96,6 +105,9 @@ GPUParams<Dtype>::GPUParams(shared_ptr<Solver<Dtype> > root_solver, int device)
   CUDA_CHECK(cudaMalloc(&diff_, size_ * sizeof(Dtype)));
   caffe_gpu_set(size_, Dtype(0), diff_);
 
+  CUDA_CHECK(cudaMalloc(&diff2_, size_ * sizeof(Dtype)));
+  caffe_gpu_set(size_, Dtype(0), diff2_);
+
   CUDA_CHECK(cudaSetDevice(initial_device));
 #else
   NO_GPU;
@@ -107,6 +119,7 @@ GPUParams<Dtype>::~GPUParams() {
 #ifndef CPU_ONLY
   CUDA_CHECK(cudaFree(data_));
   CUDA_CHECK(cudaFree(diff_));
+  CUDA_CHECK(cudaFree(diff2_));
 #endif
 }
 
@@ -116,6 +129,7 @@ void GPUParams<Dtype>::configure(Solver<Dtype>* solver) const {
       solver->net()->learnable_params();
   apply_buffers(net, data_, size_, replace_gpu);
   apply_buffers(net, diff_, size_, replace_gpu_diff);
+  apply_buffers(net, diff2_, size_, replace_gpu_diff2);
 }
 
 void DevicePair::compute(const vector<int> devices, vector<DevicePair>* pairs) {

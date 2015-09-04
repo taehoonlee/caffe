@@ -316,6 +316,7 @@ class Layer {
     param_propagate_down_[param_id] = value;
   }
 
+  bool adversarial;
 
  protected:
   /** The protobuf that stores the layer parameters */

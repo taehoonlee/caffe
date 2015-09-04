@@ -25,7 +25,7 @@ template <typename Dtype>
 class Blob {
  public:
   Blob()
-       : data_(), diff_(), count_(0), capacity_(0) {}
+       : data_(), diff_(), diff2_(), count_(0), capacity_(0) {}
 
   /// @brief Deprecated; use <code>Blob(const vector<int>& shape)</code>.
   explicit Blob(const int num, const int channels, const int height,
@@ -199,12 +199,21 @@ class Blob {
     return cpu_diff()[offset(n, c, h, w)];
   }
 
+  inline Dtype diff2_at(const int n, const int c, const int h,
+      const int w) const {
+    return cpu_diff2()[offset(n, c, h, w)];
+  }
+
   inline Dtype data_at(const vector<int>& index) const {
     return cpu_data()[offset(index)];
   }
 
   inline Dtype diff_at(const vector<int>& index) const {
     return cpu_diff()[offset(index)];
+  }
+
+  inline Dtype diff2_at(const vector<int>& index) const {
+    return cpu_diff2()[offset(index)];
   }
 
   inline const shared_ptr<SyncedMemory>& data() const {
@@ -217,15 +226,24 @@ class Blob {
     return diff_;
   }
 
+  inline const shared_ptr<SyncedMemory>& diff2() const {
+    CHECK(diff2_);
+    return diff2_;
+  }
+
   const Dtype* cpu_data() const;
   void set_cpu_data(Dtype* data);
   const Dtype* gpu_data() const;
   const Dtype* cpu_diff() const;
   const Dtype* gpu_diff() const;
+  const Dtype* cpu_diff2() const;
+  const Dtype* gpu_diff2() const;
   Dtype* mutable_cpu_data();
   Dtype* mutable_gpu_data();
   Dtype* mutable_cpu_diff();
   Dtype* mutable_gpu_diff();
+  Dtype* mutable_cpu_diff2();
+  Dtype* mutable_gpu_diff2();
   void Update();
   void FromProto(const BlobProto& proto, bool reshape = true);
   void ToProto(BlobProto* proto, bool write_diff = false) const;
@@ -268,6 +286,7 @@ class Blob {
  protected:
   shared_ptr<SyncedMemory> data_;
   shared_ptr<SyncedMemory> diff_;
+  shared_ptr<SyncedMemory> diff2_;
   vector<int> shape_;
   int count_;
   int capacity_;

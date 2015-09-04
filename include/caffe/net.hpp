@@ -74,6 +74,11 @@ class Net {
   void BackwardFrom(int start);
   void BackwardTo(int end);
 
+  void BackwardAdv();
+  void BackwardAdvFromTo(int start, int end);
+  void BackwardAdvFrom(int start);
+  void BackwardAdvTo(int end);
+
   /**
    * @brief Reshape all layers from bottom to top.
    *
@@ -86,6 +91,14 @@ class Net {
     Dtype loss;
     Forward(bottom, &loss);
     Backward();
+    return loss;
+  }
+
+  Dtype ForwardBackwardAdv(const vector<Blob<Dtype>* > & bottom) {
+    Dtype loss;
+    Forward(bottom, &loss);
+    Backward();
+    BackwardAdv();
     return loss;
   }
 

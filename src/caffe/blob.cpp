@@ -34,6 +34,7 @@ void Blob<Dtype>::Reshape(const vector<int>& shape) {
     capacity_ = count_;
     data_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
     diff_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
+    diff2_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
   }
 }
 
@@ -98,6 +99,18 @@ const Dtype* Blob<Dtype>::gpu_diff() const {
 }
 
 template <typename Dtype>
+const Dtype* Blob<Dtype>::cpu_diff2() const {
+  CHECK(diff2_);
+  return (const Dtype*)diff2_->cpu_data();
+}
+
+template <typename Dtype>
+const Dtype* Blob<Dtype>::gpu_diff2() const {
+  CHECK(diff2_);
+  return (const Dtype*)diff2_->gpu_data();
+}
+
+template <typename Dtype>
 Dtype* Blob<Dtype>::mutable_cpu_data() {
   CHECK(data_);
   return static_cast<Dtype*>(data_->mutable_cpu_data());
@@ -119,6 +132,18 @@ template <typename Dtype>
 Dtype* Blob<Dtype>::mutable_gpu_diff() {
   CHECK(diff_);
   return static_cast<Dtype*>(diff_->mutable_gpu_data());
+}
+
+template <typename Dtype>
+Dtype* Blob<Dtype>::mutable_cpu_diff2() {
+  CHECK(diff2_);
+  return static_cast<Dtype*>(diff2_->mutable_cpu_data());
+}
+
+template <typename Dtype>
+Dtype* Blob<Dtype>::mutable_gpu_diff2() {
+  CHECK(diff2_);
+  return static_cast<Dtype*>(diff2_->mutable_gpu_data());
 }
 
 template <typename Dtype>

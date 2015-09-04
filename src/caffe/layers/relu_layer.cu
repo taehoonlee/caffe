@@ -47,8 +47,15 @@ void ReLULayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<Blob<Dtype>*>& bottom) {
   if (propagate_down[0]) {
     const Dtype* bottom_data = bottom[0]->gpu_data();
-    const Dtype* top_diff = top[0]->gpu_diff();
-    Dtype* bottom_diff = bottom[0]->mutable_gpu_diff();
+    const Dtype* top_diff;
+    Dtype* bottom_diff;
+    if (this->adversarial) {
+      top_diff = top[0]->gpu_diff2();
+      bottom_diff = bottom[0]->mutable_gpu_diff2();
+    } else {
+      top_diff = top[0]->gpu_diff();
+      bottom_diff = bottom[0]->mutable_gpu_diff();
+    }
     const int count = bottom[0]->count();
     Dtype negative_slope = this->layer_param_.relu_param().negative_slope();
     // NOLINT_NEXT_LINE(whitespace/operators)
