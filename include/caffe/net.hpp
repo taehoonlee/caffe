@@ -36,7 +36,7 @@ class Net {
    *
    * You can get the input blobs using input_blobs().
    */
-  const vector<Blob<Dtype>*>& ForwardPrefilled(Dtype* loss = NULL);
+  const vector<Blob<Dtype>*>& ForwardPrefilled(Dtype* loss = NULL, bool nofetch = false);
 
   /**
    * The From and To variants of Forward and Backward operate on the
@@ -46,17 +46,17 @@ class Net {
    * the middle may be incorrect if all of the layers of a fan-in are not
    * included.
    */
-  Dtype ForwardFromTo(int start, int end);
+  Dtype ForwardFromTo(int start, int end, bool nofetch);
   Dtype ForwardFrom(int start);
   Dtype ForwardTo(int end);
   /// @brief Run forward using a set of bottom blobs, and return the result.
   const vector<Blob<Dtype>*>& Forward(const vector<Blob<Dtype>* > & bottom,
-      Dtype* loss = NULL);
+      Dtype* loss = NULL, bool nofetch = false);
   /**
    * @brief Run forward using a serialized BlobProtoVector and return the
    *        result as a serialized BlobProtoVector
    */
-  string Forward(const string& input_blob_protos, Dtype* loss = NULL);
+  string Forward(const string& input_blob_protos, Dtype* loss = NULL, bool nofetch = false);
 
   /**
    * @brief Zeroes out the diffs of all net parameters.
@@ -89,16 +89,23 @@ class Net {
 
   Dtype ForwardBackward(const vector<Blob<Dtype>* > & bottom) {
     Dtype loss;
-    Forward(bottom, &loss);
+    Forward(bottom, &loss, false);
     Backward();
     return loss;
   }
 
   Dtype ForwardBackwardAdv(const vector<Blob<Dtype>* > & bottom) {
     Dtype loss;
-    Forward(bottom, &loss);
+    Forward(bottom, &loss, false);
     Backward();
     BackwardAdv();
+    return loss;
+  }
+
+  Dtype ForwardBackward2(const vector<Blob<Dtype>* > & bottom) {
+    Dtype loss;
+    Forward(bottom, &loss, true);
+    Backward();
     return loss;
   }
 

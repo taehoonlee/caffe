@@ -39,6 +39,8 @@ class Layer {
    */
   explicit Layer(const LayerParameter& param)
     : layer_param_(param), is_shared_(false) {
+      adversarial = false;
+      nofetch = false;
       // Set phase and copy blobs (if there are any).
       phase_ = param.phase();
       if (layer_param_.blobs_size() > 0) {
@@ -317,6 +319,7 @@ class Layer {
   }
 
   bool adversarial;
+  bool nofetch;
 
  protected:
   /** The protobuf that stores the layer parameters */

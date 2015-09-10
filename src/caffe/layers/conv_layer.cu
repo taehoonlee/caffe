@@ -39,7 +39,7 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       top_diff = top[i]->gpu_diff();
     }
     // Bias gradient, if necessary.
-    if (this->bias_term_ && this->param_propagate_down_[1]) {
+    if (this->bias_term_ && this->param_propagate_down_[1] && !this->adversarial) {
       Dtype* bias_diff = this->blobs_[1]->mutable_gpu_diff();
       for (int n = 0; n < this->num_; ++n) {
         this->backward_gpu_bias(bias_diff, top_diff + top[i]->offset(n));
@@ -55,7 +55,7 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       }
       for (int n = 0; n < this->num_; ++n) {
         // gradient w.r.t. weight. Note that we will accumulate diffs.
-        if (this->param_propagate_down_[0]) {
+        if (this->param_propagate_down_[0] && !this->adversarial) {
           this->weight_gpu_gemm(bottom_data + bottom[i]->offset(n),
               top_diff + top[i]->offset(n), weight_diff);
         }
@@ -63,6 +63,13 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         if (propagate_down[i]) {
           this->backward_gpu_gemm(top_diff + top[i]->offset(n), weight,
               bottom_diff + bottom[i]->offset(n));
+        } else if (this->adversarial) { // TAEHOON : n is the sample index
+          this->backward_gpu_gemm(top_diff + top[i]->offset(n), weight,
+              bottom_diff + bottom[i]->offset(n));
+          Dtype sumsq;
+          caffe_gpu_dot(784, bottom_diff + bottom[i]->offset(n), bottom_diff + bottom[i]->offset(n), &sumsq);
+          sumsq = (Dtype) 1.0 / sqrt(sumsq);
+          caffe_gpu_scal(784, sumsq, bottom_diff + bottom[i]->offset(n));
         }
       }
     }

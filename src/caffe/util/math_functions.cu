@@ -76,6 +76,24 @@ void caffe_gpu_axpy<double>(const int N, const double alpha, const double* X,
   CUBLAS_CHECK(cublasDaxpy(Caffe::cublas_handle(), N, &alpha, X, 1, Y, 1));
 }
 
+template <typename Dtype>
+__global__ void trun(const int N, Dtype* X) {
+  CUDA_KERNEL_LOOP(index, N) {
+    X[index] = X[index] > 1 ? 1 : X[index];
+    X[index] = X[index] < 0 ? 0 : X[index];
+  }
+}
+
+template <>
+void caffe_gpu_trun<float>(const int N, float* X) {
+  trun<float><<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(N, X);
+}
+
+template <>
+void caffe_gpu_trun<double>(const int N, double* X) {
+  trun<double><<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(N, X);
+}
+
 void caffe_gpu_memcpy(const size_t N, const void* X, void* Y) {
   if (X != Y) {
     CUDA_CHECK(cudaMemcpy(Y, X, N, cudaMemcpyDefault));  // NOLINT(caffe/alt_fn)

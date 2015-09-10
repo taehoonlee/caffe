@@ -585,7 +585,7 @@ void Net<Dtype>::AppendParam(const NetParameter& param, const int layer_id,
 }
 
 template <typename Dtype>
-Dtype Net<Dtype>::ForwardFromTo(int start, int end) {
+Dtype Net<Dtype>::ForwardFromTo(int start, int end, bool nofetch) {
   CHECK_GE(start, 0);
   CHECK_LT(end, layers_.size());
   Dtype loss = 0;
@@ -594,8 +594,9 @@ Dtype Net<Dtype>::ForwardFromTo(int start, int end) {
       InputDebugInfo(i);
     }
   }
+  if (nofetch) start = 1;
   for (int i = start; i <= end; ++i) {
-    // LOG(ERROR) << "Forwarding " << layer_names_[i];
+    //LOG(ERROR) << "Forwarding " << layer_names_[i] << layers_[i]->type();
     Dtype layer_loss = layers_[i]->Forward(bottom_vecs_[i], top_vecs_[i]);
     loss += layer_loss;
     if (debug_info_) { ForwardDebugInfo(i); }
@@ -605,36 +606,36 @@ Dtype Net<Dtype>::ForwardFromTo(int start, int end) {
 
 template <typename Dtype>
 Dtype Net<Dtype>::ForwardFrom(int start) {
-  return ForwardFromTo(start, layers_.size() - 1);
+  return ForwardFromTo(start, layers_.size() - 1, false);
 }
 
 template <typename Dtype>
 Dtype Net<Dtype>::ForwardTo(int end) {
-  return ForwardFromTo(0, end);
+  return ForwardFromTo(0, end, false);
 }
 
 template <typename Dtype>
-const vector<Blob<Dtype>*>& Net<Dtype>::ForwardPrefilled(Dtype* loss) {
+const vector<Blob<Dtype>*>& Net<Dtype>::ForwardPrefilled(Dtype* loss, bool nofetch) {
   if (loss != NULL) {
-    *loss = ForwardFromTo(0, layers_.size() - 1);
+    *loss = ForwardFromTo(0, layers_.size() - 1, nofetch);
   } else {
-    ForwardFromTo(0, layers_.size() - 1);
+    ForwardFromTo(0, layers_.size() - 1, nofetch);
   }
   return net_output_blobs_;
 }
 
 template <typename Dtype>
 const vector<Blob<Dtype>*>& Net<Dtype>::Forward(
-    const vector<Blob<Dtype>*> & bottom, Dtype* loss) {
+    const vector<Blob<Dtype>*> & bottom, Dtype* loss, bool nofetch) {
   // Copy bottom to internal bottom
-  for (int i = 0; i < bottom.size(); ++i) {
+  for (int i = 0; i < bottom.size(); ++i) { // bottom.size() == 0 TAEHOON LEE
     net_input_blobs_[i]->CopyFrom(*bottom[i]);
   }
-  return ForwardPrefilled(loss);
+  return ForwardPrefilled(loss, nofetch);
 }
 
 template <typename Dtype>
-string Net<Dtype>::Forward(const string& input_blob_protos, Dtype* loss) {
+string Net<Dtype>::Forward(const string& input_blob_protos, Dtype* loss, bool nofetch) {
   BlobProtoVector blob_proto_vec;
   if (net_input_blobs_.size()) {
     blob_proto_vec.ParseFromString(input_blob_protos);
@@ -644,7 +645,7 @@ string Net<Dtype>::Forward(const string& input_blob_protos, Dtype* loss) {
       net_input_blobs_[i]->FromProto(blob_proto_vec.blobs(i));
     }
   }
-  ForwardPrefilled(loss);
+  ForwardPrefilled(loss, nofetch);
   blob_proto_vec.Clear();
   for (int i = 0; i < net_output_blobs_.size(); ++i) {
     net_output_blobs_[i]->ToProto(blob_proto_vec.add_blobs());
