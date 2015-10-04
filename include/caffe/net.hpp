@@ -36,7 +36,7 @@ class Net {
    *
    * You can get the input blobs using input_blobs().
    */
-  const vector<Blob<Dtype>*>& ForwardPrefilled(Dtype* loss = NULL, bool nofetch = false);
+  const vector<Blob<Dtype>*>& ForwardPrefilled(Dtype* loss = NULL);
 
   /**
    * The From and To variants of Forward and Backward operate on the
@@ -46,23 +46,24 @@ class Net {
    * the middle may be incorrect if all of the layers of a fan-in are not
    * included.
    */
-  Dtype ForwardFromTo(int start, int end, bool nofetch);
+  Dtype ForwardFromTo(int start, int end);
   Dtype ForwardFrom(int start);
   Dtype ForwardTo(int end);
   /// @brief Run forward using a set of bottom blobs, and return the result.
   const vector<Blob<Dtype>*>& Forward(const vector<Blob<Dtype>* > & bottom,
-      Dtype* loss = NULL, bool nofetch = false);
+      Dtype* loss = NULL);
   /**
    * @brief Run forward using a serialized BlobProtoVector and return the
    *        result as a serialized BlobProtoVector
    */
-  string Forward(const string& input_blob_protos, Dtype* loss = NULL, bool nofetch = false);
+  string Forward(const string& input_blob_protos, Dtype* loss = NULL);
 
   /**
    * @brief Zeroes out the diffs of all net parameters.
    *        Should be run before Backward.
    */
   void ClearParamDiffs();
+  void ClearParamDiffs2();
 
   /**
    * The network backward should take no input and output, since it solely
@@ -79,6 +80,23 @@ class Net {
   void BackwardAdvFrom(int start);
   void BackwardAdvTo(int end);
 
+  Dtype ForwardFromTo2(int start, int end);
+  Dtype ForwardFrom2(int start);
+  Dtype ForwardTo2(int end);
+  const vector<Blob<Dtype>*>& ForwardPrefilled2(Dtype* loss = NULL);
+  const vector<Blob<Dtype>*>& Forward2(const vector<Blob<Dtype>* > & bottom,
+      Dtype* loss = NULL);
+  string Forward2(const string& input_blob_protos, Dtype* loss = NULL);
+
+  void Backward2();
+  void BackwardFromTo2(int start, int end);
+  void BackwardFrom2(int start);
+  void BackwardTo2(int end);
+
+  void BackwardManifold();
+  void BackwardFromToManifold(int start, int end);
+
+
   /**
    * @brief Reshape all layers from bottom to top.
    *
@@ -89,14 +107,14 @@ class Net {
 
   Dtype ForwardBackward(const vector<Blob<Dtype>* > & bottom) {
     Dtype loss;
-    Forward(bottom, &loss, false);
+    Forward(bottom, &loss);
     Backward();
     return loss;
   }
 
   Dtype ForwardBackwardAdv(const vector<Blob<Dtype>* > & bottom) {
     Dtype loss;
-    Forward(bottom, &loss, false);
+    Forward(bottom, &loss);
     Backward();
     BackwardAdv();
     return loss;
@@ -104,8 +122,15 @@ class Net {
 
   Dtype ForwardBackward2(const vector<Blob<Dtype>* > & bottom) {
     Dtype loss;
-    Forward(bottom, &loss, true);
-    Backward();
+    Forward2(bottom, &loss);
+    Backward2();
+    return loss;
+  }
+
+  Dtype ForwardBackwardManifold(const vector<Blob<Dtype>* > & bottom) {
+    Dtype loss;
+    Forward2(bottom, &loss);
+    BackwardManifold();
     return loss;
   }
 

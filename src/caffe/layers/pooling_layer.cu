@@ -158,8 +158,15 @@ __global__ void StoPoolForwardTest(const int nthreads,
 template <typename Dtype>
 void PoolingLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
-  const Dtype* bottom_data = bottom[0]->gpu_data();
-  Dtype* top_data = top[0]->mutable_gpu_data();
+  const Dtype* bottom_data;
+  Dtype* top_data;
+  if (this->usingdata2) {
+    bottom_data = bottom[0]->gpu_data2();
+    top_data = top[0]->mutable_gpu_data2();
+  } else {
+    bottom_data = bottom[0]->gpu_data();
+    top_data = top[0]->mutable_gpu_data();
+  }
   int count = top[0]->count();
   // We'll output the mask to top[1] if it's of size >1.
   const bool use_top_mask = top.size() > 1;
@@ -339,7 +346,7 @@ void PoolingLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   }
   const Dtype* top_diff;
   Dtype* bottom_diff;
-  if (this->adversarial) {
+  if (this->adversarial || this->usingdata2) {
     top_diff = top[0]->gpu_diff2();
     bottom_diff = bottom[0]->mutable_gpu_diff2();
   } else {

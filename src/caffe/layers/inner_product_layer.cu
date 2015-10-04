@@ -12,8 +12,15 @@ namespace caffe {
 template <typename Dtype>
 void InnerProductLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
-  const Dtype* bottom_data = bottom[0]->gpu_data();
-  Dtype* top_data = top[0]->mutable_gpu_data();
+  const Dtype* bottom_data;
+  Dtype* top_data;
+  if (this->usingdata2) {
+    bottom_data = bottom[0]->gpu_data2();
+    top_data = top[0]->mutable_gpu_data2();
+  } else {
+    bottom_data = bottom[0]->gpu_data();
+    top_data = top[0]->mutable_gpu_data();
+  }
   const Dtype* weight = this->blobs_[0]->gpu_data();
   if (M_ == 1) {
     caffe_gpu_gemv<Dtype>(CblasNoTrans, N_, K_, (Dtype)1.,
@@ -35,52 +42,78 @@ template <typename Dtype>
 void InnerProductLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) {
-  if (this->param_propagate_down_[0]) {
+  if (this->param_propagate_down_[0] && !this->adversarial) {
     const Dtype* top_diff;
-    const Dtype* bottom_data = bottom[0]->gpu_data();
+    const Dtype* bottom_data;
+    Dtype* weights;
+    top_diff = top[0]->gpu_diff();
+    bottom_data = bottom[0]->gpu_data();
+    weights = this->blobs_[0]->mutable_gpu_diff();
     // Gradient with respect to weight
-    if (!this->adversarial) {
-      top_diff = top[0]->gpu_diff();
+    if (this->manifold) {
       caffe_gpu_gemm<Dtype>(CblasTrans, CblasNoTrans, N_, K_, M_, (Dtype)1.,
-          top_diff, bottom_data, (Dtype)1., this->blobs_[0]->mutable_gpu_diff());
+            top[0]->gpu_diff2(), bottom[0]->gpu_data(), (Dtype)1., this->blobs_[0]->mutable_gpu_diff2());
+      caffe_gpu_gemm<Dtype>(CblasTrans, CblasNoTrans, N_, K_, M_, (Dtype)1.,
+          top[0]->gpu_diff3(), bottom[0]->gpu_data2(), (Dtype)1., this->blobs_[0]->mutable_gpu_diff3());
+    } else {
+      caffe_gpu_gemm<Dtype>(CblasTrans, CblasNoTrans, N_, K_, M_, (Dtype)1.,
+          top_diff, bottom_data, (Dtype)1., weights);
     }
   }
-  if (bias_term_ && this->param_propagate_down_[1]) {
+  if (bias_term_ && this->param_propagate_down_[1] && !this->adversarial) {
     const Dtype* top_diff;
+    Dtype* weights;
+    top_diff = top[0]->gpu_diff();
+    weights = this->blobs_[1]->mutable_gpu_diff();
     // Gradient with respect to bias
-    if (!this->adversarial) {
-      top_diff = top[0]->gpu_diff();
+    if (this->manifold) {
+      caffe_gpu_gemv<Dtype>(CblasTrans, M_, N_, (Dtype)1., top[0]->gpu_diff2(),
+          bias_multiplier_.gpu_data(), (Dtype)1.,
+          this->blobs_[1]->mutable_gpu_diff2());
+      caffe_gpu_gemv<Dtype>(CblasTrans, M_, N_, (Dtype)1., top[0]->gpu_diff3(),
+          bias_multiplier_.gpu_data(), (Dtype)1.,
+          this->blobs_[1]->mutable_gpu_diff3());
+    } else {
       caffe_gpu_gemv<Dtype>(CblasTrans, M_, N_, (Dtype)1., top_diff,
           bias_multiplier_.gpu_data(), (Dtype)1.,
-          this->blobs_[1]->mutable_gpu_diff());
+          weights);
     }
   }
   if (propagate_down[0]) {
     const Dtype* top_diff;
+    const Dtype* weights;
+    Dtype* bottom_diff;
+    weights = this->blobs_[0]->gpu_data();
     // Gradient with respect to bottom data
-    if (this->adversarial) {
-      //const Dtype* tmp1 = top[0]->cpu_diff();
-      //const Dtype* tmp2 = top[0]->cpu_diff2();
-      //LOG_IF(INFO, Caffe::root_solver()) << tmp1[0] << "==" << tmp2[0];
-
-
-      top_diff = top[0]->gpu_diff2();
+    if (this->manifold) {
       caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M_, K_, N_, (Dtype)1.,
-          top_diff, this->blobs_[0]->gpu_data(), (Dtype)0.,
+          top[0]->gpu_diff2(), weights, (Dtype)0.,
           bottom[0]->mutable_gpu_diff2());
-
-
-      //tmp1 = bottom[0]->cpu_diff();
-      //tmp2 = bottom[0]->cpu_diff2();
-      //LOG_IF(INFO, Caffe::root_solver()) << tmp1[0] << "==" << tmp2[0];
-
-
-    } else {
-      top_diff = top[0]->gpu_diff();
       caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M_, K_, N_, (Dtype)1.,
-          top_diff, this->blobs_[0]->gpu_data(), (Dtype)0.,
-          bottom[0]->mutable_gpu_diff());
+          top[0]->gpu_diff3(), weights, (Dtype)0.,
+          bottom[0]->mutable_gpu_diff3());
+    } else {
+      if (this->adversarial) {
+        top_diff = top[0]->gpu_diff2();
+        bottom_diff = bottom[0]->mutable_gpu_diff2();
+      } else {
+        top_diff = top[0]->gpu_diff();
+        bottom_diff = bottom[0]->mutable_gpu_diff();
+      }
+      caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M_, K_, N_, (Dtype)1.,
+          top_diff, weights, (Dtype)0.,
+          bottom_diff);
     }
+  } else if (this->adversarial) {
+      caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M_, K_, N_, (Dtype)1.,
+          top[0]->gpu_diff2(), this->blobs_[0]->gpu_data(), (Dtype)0.,
+          bottom[0]->mutable_gpu_diff2());
+      Dtype sumsq;
+      for (int n=0; n<100; ++n) {
+          caffe_gpu_dot(784, bottom[0]->mutable_gpu_diff2() + bottom[0]->offset(n), bottom[0]->mutable_gpu_diff2() + bottom[0]->offset(n), &sumsq);
+          sumsq = (Dtype) 1.0 / sqrt(sumsq);
+          caffe_gpu_scal(784, sumsq, bottom[0]->mutable_gpu_diff2() + bottom[0]->offset(n));
+      }
   }
 }
 

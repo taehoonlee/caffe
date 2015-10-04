@@ -17,8 +17,15 @@ __global__ void ReLUForward(const int n, const Dtype* in, Dtype* out,
 template <typename Dtype>
 void ReLULayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
-  const Dtype* bottom_data = bottom[0]->gpu_data();
-  Dtype* top_data = top[0]->mutable_gpu_data();
+  const Dtype* bottom_data;
+  Dtype* top_data;
+  if (this->usingdata2) {
+    bottom_data = bottom[0]->gpu_data2();
+    top_data = top[0]->mutable_gpu_data2();
+  } else {
+    bottom_data = bottom[0]->gpu_data();
+    top_data = top[0]->mutable_gpu_data();
+  }
   const int count = bottom[0]->count();
   Dtype negative_slope = this->layer_param_.relu_param().negative_slope();
   // NOLINT_NEXT_LINE(whitespace/operators)
@@ -46,21 +53,29 @@ void ReLULayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) {
   if (propagate_down[0]) {
-    const Dtype* bottom_data = bottom[0]->gpu_data();
+    const Dtype* bottom_data;
     const Dtype* top_diff;
     Dtype* bottom_diff;
-    if (this->adversarial) {
-      top_diff = top[0]->gpu_diff2();
-      bottom_diff = bottom[0]->mutable_gpu_diff2();
-    } else {
-      top_diff = top[0]->gpu_diff();
-      bottom_diff = bottom[0]->mutable_gpu_diff();
-    }
     const int count = bottom[0]->count();
     Dtype negative_slope = this->layer_param_.relu_param().negative_slope();
     // NOLINT_NEXT_LINE(whitespace/operators)
-    ReLUBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        count, top_diff, bottom_data, bottom_diff, negative_slope);
+    if (this->manifold) {
+      ReLUBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top[0]->gpu_diff2(), bottom[0]->gpu_data(), bottom[0]->mutable_gpu_diff2(), negative_slope);
+      ReLUBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top[0]->gpu_diff3(), bottom[0]->gpu_data2(), bottom[0]->mutable_gpu_diff3(), negative_slope);
+    } else {
+      bottom_data = bottom[0]->gpu_data();
+      if (this->adversarial) {
+        top_diff = top[0]->gpu_diff2();
+        bottom_diff = bottom[0]->mutable_gpu_diff2();
+      } else {
+        top_diff = top[0]->gpu_diff();
+        bottom_diff = bottom[0]->mutable_gpu_diff();
+      }
+      ReLUBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top_diff, bottom_data, bottom_diff, negative_slope);
+    }
     CUDA_POST_KERNEL_CHECK;
   }
 }

@@ -196,10 +196,28 @@ void Solver<Dtype>::InitTestNets() {
 }
 
 template <typename Dtype>
+void param2file(const Dtype *X, const int N, const char *filename) {
+  std::ofstream myfile(filename, ios::binary);
+  if (myfile.is_open()) {
+    for (int i=0;i<N;++i) myfile.write( (char *) &X[i], sizeof(Dtype) );
+    myfile.close();
+  }
+}
+
+template <typename Dtype>
+void param2file(const Dtype *X, const int from, const int to, const char *filename) {
+  std::ofstream myfile(filename, ios::binary);
+  if (myfile.is_open()) {
+    for (int i=from;i<to;++i) myfile.write( (char *) &X[i], sizeof(Dtype) );
+    myfile.close();
+  }
+}
+
+template <typename Dtype>
 void Solver<Dtype>::Step(int iters) {
   vector<Blob<Dtype>*> bottom_vec;
   Dtype *perturb;
-  if (param_.adversarial()) {
+  if (param_.adversarial() || param_.manifold()) {
     CUDA_CHECK(cudaMalloc(&perturb, 78400 * sizeof(Dtype)));
   }
   const int start_iter = iter_;
@@ -227,12 +245,12 @@ void Solver<Dtype>::Step(int iters) {
     const bool display = param_.display() && iter_ % param_.display() == 0;
     net_->set_debug_info(display && param_.debug_info());
     // accumulate the loss and gradient
-    Dtype loss = 0;
-    if (param_.adversarial()) {
+    Dtype loss = 0, loss2 = 0;
+    if (param_.adversarial() || param_.manifold()) {
      for (int i = 0; i < param_.iter_size(); ++i) {
         loss += net_->ForwardBackwardAdv(bottom_vec);
       }
-   } else {
+    } else {
      for (int i = 0; i < param_.iter_size(); ++i) {
         loss += net_->ForwardBackward(bottom_vec);
       }
@@ -247,6 +265,38 @@ void Solver<Dtype>::Step(int iters) {
       int idx = (iter_ - start_iter) % average_loss;
       smoothed_loss += (loss - losses[idx]) / average_loss;
       losses[idx] = loss;
+    }
+    if (param_.adversarial() || param_.manifold()) {
+      // adversarial examples generation
+      const Dtype* gradX = net_->bottom_vecs()[1][0]->gpu_diff2();
+      caffe_gpu_memcpy( net_->bottom_vecs()[1][0]->count() * sizeof(Dtype),
+        net_->bottom_vecs()[1][0]->gpu_data(),
+        net_->bottom_vecs()[1][0]->mutable_gpu_data2() );
+      caffe_gpu_axpy( net_->bottom_vecs()[1][0]->count(),
+        //(Dtype) -1.0 * ( (stop_iter - iter_)*2>stop_iter ? stop_iter : (stop_iter - iter_)*2 ) / stop_iter,
+        (Dtype) -1.0,
+        static_cast<const Dtype*>(gradX),
+        static_cast<Dtype*>(net_->bottom_vecs()[1][0]->mutable_gpu_data2()) );
+      caffe_gpu_trun( net_->bottom_vecs()[1][0]->count(),
+        static_cast<Dtype*>(net_->bottom_vecs()[1][0]->mutable_gpu_data2()) );
+      // adv examples forward backward
+      for (int i = 0; i < callbacks_.size(); ++i) {
+        callbacks_[i]->on_gradients_ready();
+      }
+      net_->ClearParamDiffs2();
+      for (int i = 0; i < callbacks_.size(); ++i) {
+        callbacks_[i]->on_start();
+      }
+      if (param_.adversarial()) {
+        for (int i = 0; i < param_.iter_size(); ++i) {
+          loss2 += net_->ForwardBackward2(bottom_vec);
+        }
+      } else if (param_.manifold()) {
+        for (int i = 0; i < param_.iter_size(); ++i) {
+          loss2 += net_->ForwardBackwardManifold(bottom_vec);
+        }
+      }
+      loss2 /= param_.iter_size();
     }
     if (display) {
       LOG_IF(INFO, Caffe::root_solver()) << "Iteration " << iter_
@@ -268,92 +318,52 @@ void Solver<Dtype>::Step(int iters) {
           LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #"
               << score_index++ << ": " << output_name << " = "
               << result_vec[k] << loss_msg_stream.str();
+          if (param_.adversarial() || param_.manifold()) {
+        caffe_gpu_memcpy( net_->bottom_vecs()[1][0]->count() * sizeof(Dtype),
+                  net_->bottom_vecs()[1][0]->gpu_data(),
+                  perturb);
+        caffe_gpu_axpy( net_->bottom_vecs()[1][0]->count(), (Dtype) -1.0,
+                  net_->bottom_vecs()[1][0]->gpu_data2(),
+                  perturb);
+        Dtype sumsq1;
+        caffe_gpu_dot( net_->bottom_vecs()[1][0]->count(), static_cast<const Dtype*>(perturb), static_cast<const Dtype*>(perturb), &sumsq1);
+
+        caffe_gpu_memcpy( net_->bottom_vecs()[net_->layers().size()-2][0]->count() * sizeof(Dtype),
+                  net_->bottom_vecs()[net_->layers().size()-2][0]->gpu_data(),
+                  perturb);
+        caffe_gpu_axpy( net_->bottom_vecs()[net_->layers().size()-2][0]->count(), (Dtype) -1.0,
+                  net_->bottom_vecs()[net_->layers().size()-2][0]->gpu_data2(),
+                  perturb);
+        Dtype sumsq2;
+        caffe_gpu_dot( net_->bottom_vecs()[net_->layers().size()-2][0]->count(), static_cast<const Dtype*>(perturb), static_cast<const Dtype*>(perturb), &sumsq2);
+ 
+        LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #100: 2-norm diff = " << sumsq1 / 100 << "->" << sumsq2 / 100;
+          }
         }
       }
     }
-    for (int i = 0; i < callbacks_.size(); ++i) {
-      callbacks_[i]->on_gradients_ready();
+
+    if (param_.adversarial()) {
+      const vector<Blob<Dtype>*>& net_params = net_->learnable_params();
+      for (int param_id = 0; param_id < net_params.size(); ++param_id) {
+        caffe_gpu_axpy( net_params[param_id]->count(), (Dtype) 1.0,
+                  net_params[param_id]->gpu_diff2(),
+                  net_params[param_id]->mutable_gpu_diff());
+        caffe_gpu_scal( net_params[param_id]->count(), (Dtype) 0.5, net_params[param_id]->mutable_gpu_diff() );
+      }
+
+    } else if (param_.manifold()) {
+      const vector<Blob<Dtype>*>& net_params = net_->learnable_params();
+      for (int param_id = 0; param_id < net_params.size(); ++param_id) {
+        caffe_gpu_axpy( net_params[param_id]->count(), (Dtype)(1.0),
+                  net_params[param_id]->gpu_diff3(),
+                  net_params[param_id]->mutable_gpu_diff2());
+        caffe_gpu_axpy( net_params[param_id]->count(), (Dtype) (param_.manifold()),
+                  net_params[param_id]->gpu_diff2(),
+                  net_params[param_id]->mutable_gpu_diff());
+      }
     }
     ApplyUpdate();
-
-    //LOG_IF(INFO, Caffe::root_solver()) << net_->input_blob_indices() << "," << net_->output_blob_indices();
-    if (param_.adversarial()) {
-
-      // visualization
-      /*
-      if ((iter_+1)%500 == 0) {
-        const Dtype* tmp1 = net_->bottom_vecs()[1][0]->cpu_data();
-        std::ofstream myfile("X1.txt");
-        if (myfile.is_open()) {
-          for (int i=0;i<784;++i) myfile << tmp1[i] << " ";
-        }
-        std::ofstream myfile2("X2.txt");
-        if (myfile2.is_open()) {
-          for (int i=784;i<1568;++i) myfile2 << tmp1[i] << " ";
-        }
-        tmp1 = net_->bottom_vecs()[14][1]->cpu_data();
-        std::ofstream myfile3("y.txt");
-        if (myfile3.is_open()) {
-          for (int i=0;i<5;++i) myfile3 << tmp1[i] << " ";
-        }
-        tmp1 = net_->top_vecs()[13][0]->cpu_data();
-        std::ofstream myfile4("z.txt");
-        if (myfile4.is_open()) {
-          for (int i=0;i<20;++i) myfile4 << tmp1[i] << " ";
-        } 
-      }
-      */
-
-//      caffe_gpu_scal(78400, (Dtype) 0, perturb);
-//      caffe_gpu_add(78400, perturb, net_->top_vecs()[0][0]->gpu_diff(), net_->top_vecs()[0][0]->mutable_gpu_diff());
-//      std::cout << net_->bottom_vecs()[1][0]->shape_string();
- 
-      const Dtype* gradX = net_->bottom_vecs()[1][0]->gpu_diff2();
-//      Dtype sumsq;
-//      caffe_gpu_dot(784, gradX, gradX, &sumsq);
-//      std::cout << sumsq << std::endl;
-      caffe_gpu_axpy(net_->bottom_vecs()[1][0]->count(),
-        (Dtype) -1.0,
-        static_cast<const Dtype*>(gradX),
-        static_cast<Dtype*>(net_->bottom_vecs()[1][0]->mutable_gpu_data()));
-      caffe_gpu_trun(net_->bottom_vecs()[1][0]->count(),
-        static_cast<Dtype*>(net_->bottom_vecs()[1][0]->mutable_gpu_data()));
-
-      net_->ClearParamDiffs();
-      for (int i = 0; i < callbacks_.size(); ++i) {
-        callbacks_[i]->on_start();
-      }
-      loss = 0;
-      for (int i = 0; i < param_.iter_size(); ++i) {
-        loss += net_->ForwardBackward2(bottom_vec);
-      }
-      loss /= param_.iter_size();
-      for (int i = 0; i < callbacks_.size(); ++i) {
-        callbacks_[i]->on_gradients_ready();
-      }
-
-      // visualization
-      /*
-      if ((iter_+1)%500 == 0) {
-        const Dtype* tmp2 = net_->bottom_vecs()[1][0]->cpu_data();
-        std::ofstream myfile5("Xadv1.txt");
-        if (myfile5.is_open()) {
-          for (int i=0;i<784;++i) myfile5 << tmp2[i] << " ";
-        }
-        std::ofstream myfile6("Xadv2.txt");
-        if (myfile6.is_open()) {
-          for (int i=784;i<1568;++i) myfile6 << tmp2[i] << " ";
-        }
-        tmp2 = net_->top_vecs()[13][0]->cpu_data();
-        std::ofstream myfile7("zadv.txt");
-        if (myfile7.is_open()) {
-          for (int i=0;i<20;++i) myfile7 << tmp2[i] << " ";
-        }
-      }
-      */
-
-      ApplyUpdate();
-    }
 
     // Increment the internal iter_ counter -- its value should always indicate
     // the number of times the weights have been updated.
@@ -374,7 +384,7 @@ void Solver<Dtype>::Step(int iters) {
       break;
     }
   }
-  if (param_.adversarial()) {
+  if (param_.adversarial() || param_.manifold()) {
     CUDA_CHECK(cudaFree(perturb));
   }
 }
@@ -616,8 +626,6 @@ Dtype SGDSolver<Dtype>::GetLearningRate() {
   } else {
     LOG(FATAL) << "Unknown learning rate policy: " << lr_policy;
   }
-  if (this->param_.adversarial())
-    rate /= (Dtype) 2.0;
   return rate;
 }
 

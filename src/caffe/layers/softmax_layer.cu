@@ -86,9 +86,18 @@ __global__ void kernel_channel_dot(const int num, const int channels,
 template <typename Dtype>
 void SoftmaxLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
-  const Dtype* bottom_data = bottom[0]->gpu_data();
-  Dtype* top_data = top[0]->mutable_gpu_data();
-  Dtype* scale_data = scale_.mutable_gpu_data();
+  const Dtype* bottom_data;
+  Dtype* top_data;
+  Dtype* scale_data;
+  if (this->usingdata2) {
+    bottom_data = bottom[0]->gpu_data2();
+    top_data = top[0]->mutable_gpu_data2();
+    scale_data = scale_.mutable_gpu_data2();
+  } else {
+    bottom_data = bottom[0]->gpu_data();
+    top_data = top[0]->mutable_gpu_data();
+    scale_data = scale_.mutable_gpu_data();
+  }
   int count = bottom[0]->count();
   int channels = top[0]->shape(softmax_axis_);
   caffe_copy(count, bottom_data, top_data);

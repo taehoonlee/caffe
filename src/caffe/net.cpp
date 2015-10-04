@@ -585,7 +585,7 @@ void Net<Dtype>::AppendParam(const NetParameter& param, const int layer_id,
 }
 
 template <typename Dtype>
-Dtype Net<Dtype>::ForwardFromTo(int start, int end, bool nofetch) {
+Dtype Net<Dtype>::ForwardFromTo(int start, int end) {
   CHECK_GE(start, 0);
   CHECK_LT(end, layers_.size());
   Dtype loss = 0;
@@ -594,9 +594,8 @@ Dtype Net<Dtype>::ForwardFromTo(int start, int end, bool nofetch) {
       InputDebugInfo(i);
     }
   }
-  if (nofetch) start = 1;
   for (int i = start; i <= end; ++i) {
-    //LOG(ERROR) << "Forwarding " << layer_names_[i] << layers_[i]->type();
+    layers_[i]->usingdata2 = false;
     Dtype layer_loss = layers_[i]->Forward(bottom_vecs_[i], top_vecs_[i]);
     loss += layer_loss;
     if (debug_info_) { ForwardDebugInfo(i); }
@@ -606,36 +605,36 @@ Dtype Net<Dtype>::ForwardFromTo(int start, int end, bool nofetch) {
 
 template <typename Dtype>
 Dtype Net<Dtype>::ForwardFrom(int start) {
-  return ForwardFromTo(start, layers_.size() - 1, false);
+  return ForwardFromTo(start, layers_.size() - 1);
 }
 
 template <typename Dtype>
 Dtype Net<Dtype>::ForwardTo(int end) {
-  return ForwardFromTo(0, end, false);
+  return ForwardFromTo(0, end);
 }
 
 template <typename Dtype>
-const vector<Blob<Dtype>*>& Net<Dtype>::ForwardPrefilled(Dtype* loss, bool nofetch) {
+const vector<Blob<Dtype>*>& Net<Dtype>::ForwardPrefilled(Dtype* loss) {
   if (loss != NULL) {
-    *loss = ForwardFromTo(0, layers_.size() - 1, nofetch);
+    *loss = ForwardFromTo(0, layers_.size() - 1);
   } else {
-    ForwardFromTo(0, layers_.size() - 1, nofetch);
+    ForwardFromTo(0, layers_.size() - 1);
   }
   return net_output_blobs_;
 }
 
 template <typename Dtype>
 const vector<Blob<Dtype>*>& Net<Dtype>::Forward(
-    const vector<Blob<Dtype>*> & bottom, Dtype* loss, bool nofetch) {
+    const vector<Blob<Dtype>*> & bottom, Dtype* loss) {
   // Copy bottom to internal bottom
   for (int i = 0; i < bottom.size(); ++i) { // bottom.size() == 0 TAEHOON LEE
     net_input_blobs_[i]->CopyFrom(*bottom[i]);
   }
-  return ForwardPrefilled(loss, nofetch);
+  return ForwardPrefilled(loss);
 }
 
 template <typename Dtype>
-string Net<Dtype>::Forward(const string& input_blob_protos, Dtype* loss, bool nofetch) {
+string Net<Dtype>::Forward(const string& input_blob_protos, Dtype* loss) {
   BlobProtoVector blob_proto_vec;
   if (net_input_blobs_.size()) {
     blob_proto_vec.ParseFromString(input_blob_protos);
@@ -645,7 +644,78 @@ string Net<Dtype>::Forward(const string& input_blob_protos, Dtype* loss, bool no
       net_input_blobs_[i]->FromProto(blob_proto_vec.blobs(i));
     }
   }
-  ForwardPrefilled(loss, nofetch);
+  ForwardPrefilled(loss);
+  blob_proto_vec.Clear();
+  for (int i = 0; i < net_output_blobs_.size(); ++i) {
+    net_output_blobs_[i]->ToProto(blob_proto_vec.add_blobs());
+  }
+  string output;
+  blob_proto_vec.SerializeToString(&output);
+  return output;
+}
+
+template <typename Dtype>
+Dtype Net<Dtype>::ForwardFromTo2(int start, int end) {
+  CHECK_GE(start, 0);
+  CHECK_LT(end, layers_.size());
+  Dtype loss = 0;
+  if (debug_info_) {
+    for (int i = 0; i < net_input_blobs_.size(); ++i) {
+      InputDebugInfo(i);
+    }
+  }
+  if (start < 1) start = 1;
+  for (int i = start; i <= end; ++i) {
+    layers_[i]->usingdata2 = true;
+    Dtype layer_loss = layers_[i]->Forward(bottom_vecs_[i], top_vecs_[i]);
+    loss += layer_loss;
+    if (debug_info_) { ForwardDebugInfo(i); }
+  }
+  return loss;
+}
+
+template <typename Dtype>
+Dtype Net<Dtype>::ForwardFrom2(int start) {
+  return ForwardFromTo2(start, layers_.size() - 1);
+}
+
+template <typename Dtype>
+Dtype Net<Dtype>::ForwardTo2(int end) {
+  return ForwardFromTo2(0, end);
+}
+
+template <typename Dtype>
+const vector<Blob<Dtype>*>& Net<Dtype>::ForwardPrefilled2(Dtype* loss) {
+  if (loss != NULL) {
+    *loss = ForwardFromTo2(0, layers_.size() - 1);
+  } else {
+    ForwardFromTo2(0, layers_.size() - 1);
+  }
+  return net_output_blobs_;
+}
+
+template <typename Dtype>
+const vector<Blob<Dtype>*>& Net<Dtype>::Forward2(
+    const vector<Blob<Dtype>*> & bottom, Dtype* loss) {
+  // Copy bottom to internal bottom
+  for (int i = 0; i < bottom.size(); ++i) { // bottom.size() == 0 TAEHOON LEE
+    net_input_blobs_[i]->CopyFrom(*bottom[i]);
+  }
+  return ForwardPrefilled2(loss);
+}
+
+template <typename Dtype>
+string Net<Dtype>::Forward2(const string& input_blob_protos, Dtype* loss) {
+  BlobProtoVector blob_proto_vec;
+  if (net_input_blobs_.size()) {
+    blob_proto_vec.ParseFromString(input_blob_protos);
+    CHECK_EQ(blob_proto_vec.blobs_size(), net_input_blobs_.size())
+        << "Incorrect input size.";
+    for (int i = 0; i < blob_proto_vec.blobs_size(); ++i) {
+      net_input_blobs_[i]->FromProto(blob_proto_vec.blobs(i));
+    }
+  }
+  ForwardPrefilled2(loss);
   blob_proto_vec.Clear();
   for (int i = 0; i < net_output_blobs_.size(); ++i) {
     net_output_blobs_[i]->ToProto(blob_proto_vec.add_blobs());
@@ -662,6 +732,7 @@ void Net<Dtype>::BackwardFromTo(int start, int end) {
   for (int i = start; i >= end; --i) {
     if (layer_need_backward_[i]) {
       layers_[i]->adversarial = false;
+      layers_[i]->manifold = false;
       layers_[i]->Backward(
           top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
       if (debug_info_) { BackwardDebugInfo(i); }
@@ -676,6 +747,7 @@ void Net<Dtype>::BackwardAdvFromTo(int start, int end) {
   for (int i = start; i >= end; --i) {
     if (layer_need_backward_[i]) {
       layers_[i]->adversarial = true;
+      layers_[i]->manifold = false;
       layers_[i]->Backward(
           top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
       if (debug_info_) { BackwardDebugInfo(i); }
@@ -695,7 +767,62 @@ void Net<Dtype>::BackwardAdvFromTo(int start, int end) {
   cout << endl;
 */
 }
- 
+
+template <typename Dtype>
+void Net<Dtype>::BackwardFromToManifold(int start, int end) {
+  CHECK_GE(end, 0);
+  CHECK_LT(start, layers_.size());
+//  LOG(INFO) << start << ":" << layers_[start]->type() << top_vecs_[start][0]->count();
+//  LOG(INFO) << start << ":" << bottom_vecs_[start][0]->count();
+
+  for (int i = start+1; i > end; --i) {
+    caffe_gpu_set( bottom_vecs_[i][0]->count(), static_cast<Dtype>(0), bottom_vecs_[i][0]->mutable_gpu_diff2() );
+    caffe_gpu_set( bottom_vecs_[i][0]->count(), static_cast<Dtype>(0), bottom_vecs_[i][0]->mutable_gpu_diff3() );
+  }
+
+  caffe_gpu_memcpy( bottom_vecs_[start][0]->count() * sizeof(Dtype),
+    bottom_vecs_[start][0]->gpu_data(),
+    bottom_vecs_[start][0]->mutable_gpu_diff2() );
+  caffe_gpu_axpy( bottom_vecs_[start][0]->count(),
+    (Dtype) -1.0,
+    static_cast<const Dtype*>(bottom_vecs_[start][0]->gpu_data2()),
+    bottom_vecs_[start][0]->mutable_gpu_diff2() );
+  caffe_gpu_scal( bottom_vecs_[start][0]->count(), (Dtype) 0.01, bottom_vecs_[start][0]->mutable_gpu_diff2() );
+  caffe_gpu_axpy( bottom_vecs_[start][0]->count(),
+    (Dtype) -1.0,
+    static_cast<const Dtype*>(bottom_vecs_[start][0]->gpu_diff2()),
+    static_cast<Dtype*>(bottom_vecs_[start][0]->mutable_gpu_diff3()) );
+  start--;
+
+//LOG(INFO) << top_vecs_[start][0]->cpu_diff3()[0] << " " << top_vecs_[start][0]->cpu_diff3()[1] << " " << top_vecs_[start][0]->cpu_diff3()[2] << " " << top_vecs_[start][0]->cpu_diff3()[3];
+
+  for (int i = start; i >= end; --i) {
+//LOG(INFO) << i << ":" << layers_[i]->type();
+    if (layer_need_backward_[i]) {
+      layers_[i]->adversarial = false;
+      layers_[i]->manifold = true;
+      layers_[i]->Backward(
+          top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
+      if (debug_info_) { BackwardDebugInfo(i); }
+    }
+  }
+}
+
+template <typename Dtype>
+void Net<Dtype>::BackwardFromTo2(int start, int end) {
+  CHECK_GE(end, 0);
+  CHECK_LT(start, layers_.size());
+  for (int i = start; i >= end; --i) {
+    if (layer_need_backward_[i]) {
+      layers_[i]->adversarial = false;
+      layers_[i]->usingdata2 = true;
+      layers_[i]->manifold = false;
+      layers_[i]->Backward(
+          top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
+      if (debug_info_) { BackwardDebugInfo(i); }
+    }
+  }
+}
 
 
 template <typename Dtype>
@@ -887,6 +1014,57 @@ void Net<Dtype>::BackwardAdv() {
 }
 
 template <typename Dtype>
+void Net<Dtype>::BackwardFrom2(int start) {
+  BackwardFromTo2(start, 0);
+}
+
+template <typename Dtype>
+void Net<Dtype>::BackwardTo2(int end) {
+  BackwardFromTo2(layers_.size() - 1, end);
+}
+
+template <typename Dtype>
+void Net<Dtype>::Backward2() {
+  BackwardFromTo2(layers_.size() - 1, 0);
+  if (debug_info_) {
+    Dtype asum_data = 0, asum_diff = 0, sumsq_data = 0, sumsq_diff = 0;
+    for (int i = 0; i < params_.size(); ++i) {
+      if (param_owners_[i] >= 0) { continue; }
+      asum_data += params_[i]->asum_data();
+      asum_diff += params_[i]->asum_diff();
+      sumsq_data += params_[i]->sumsq_data();
+      sumsq_diff += params_[i]->sumsq_diff();
+    }
+    const Dtype l2norm_data = std::sqrt(sumsq_data);
+    const Dtype l2norm_diff = std::sqrt(sumsq_diff);
+    LOG(ERROR) << "    [Backward] All net params (data, diff): "
+               << "L1 norm = (" << asum_data << ", " << asum_diff << "); "
+               << "L2 norm = (" << l2norm_data << ", " << l2norm_diff << ")";
+  }
+}
+
+template <typename Dtype>
+void Net<Dtype>::BackwardManifold() {
+  BackwardFromToManifold(layers_.size() - 2, 0);
+  if (debug_info_) {
+    Dtype asum_data = 0, asum_diff = 0, sumsq_data = 0, sumsq_diff = 0;
+    for (int i = 0; i < params_.size(); ++i) {
+      if (param_owners_[i] >= 0) { continue; }
+      asum_data += params_[i]->asum_data();
+      asum_diff += params_[i]->asum_diff();
+      sumsq_data += params_[i]->sumsq_data();
+      sumsq_diff += params_[i]->sumsq_diff();
+    }
+    const Dtype l2norm_data = std::sqrt(sumsq_data);
+    const Dtype l2norm_diff = std::sqrt(sumsq_diff);
+    LOG(ERROR) << "    [Backward] All net params (data, diff): "
+               << "L1 norm = (" << asum_data << ", " << asum_diff << "); "
+               << "L2 norm = (" << l2norm_data << ", " << l2norm_diff << ")";
+  }
+}
+
+
+template <typename Dtype>
 void Net<Dtype>::Reshape() {
   for (int i = 0; i < layers_.size(); ++i) {
     layers_[i]->Reshape(bottom_vecs_[i], top_vecs_[i]);
@@ -1075,6 +1253,31 @@ template <typename Dtype>
 void Net<Dtype>::Update() {
   for (int i = 0; i < learnable_params_.size(); ++i) {
     learnable_params_[i]->Update();
+  }
+}
+
+template <typename Dtype>
+void Net<Dtype>::ClearParamDiffs2() {
+  for (int i = 0; i < learnable_params_.size(); ++i) {
+    Blob<Dtype>* blob = learnable_params_[i];
+    switch (Caffe::mode()) {
+    case Caffe::CPU:
+      caffe_set(blob->count(), static_cast<Dtype>(0),
+                blob->mutable_cpu_diff2());
+      caffe_set(blob->count(), static_cast<Dtype>(0),
+                blob->mutable_cpu_diff3());
+      break;
+    case Caffe::GPU:
+#ifndef CPU_ONLY
+      caffe_gpu_set(blob->count(), static_cast<Dtype>(0),
+                    blob->mutable_gpu_diff2());
+      caffe_gpu_set(blob->count(), static_cast<Dtype>(0),
+                    blob->mutable_gpu_diff3());
+#else
+      NO_GPU;
+#endif
+      break;
+    }
   }
 }
 

@@ -35,15 +35,11 @@ class Params {
   inline Dtype* diff() const {
     return diff_;
   }
-  inline Dtype* diff2() const {
-    return diff2_;
-  }
 
  protected:
   const size_t size_;           // Size of buffers
   Dtype* data_;                 // Network parameters
   Dtype* diff_;                 // Gradient
-  Dtype* diff2_;                // Gradient
 
 DISABLE_COPY_AND_ASSIGN(Params);
 };
@@ -61,7 +57,6 @@ class GPUParams : public Params<Dtype> {
   using Params<Dtype>::size_;
   using Params<Dtype>::data_;
   using Params<Dtype>::diff_;
-  using Params<Dtype>::diff2_;
 };
 
 class DevicePair {
@@ -116,7 +111,6 @@ class P2PSync : public GPUParams<Dtype>, public Solver<Dtype>::Callback,
   using Params<Dtype>::size_;
   using Params<Dtype>::data_;
   using Params<Dtype>::diff_;
-  using Params<Dtype>::diff2_;
 };
 
 }  // namespace caffe
