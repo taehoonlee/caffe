@@ -216,9 +216,15 @@ void param2file(const Dtype *X, const int from, const int to, const char *filena
 template <typename Dtype>
 void Solver<Dtype>::Step(int iters) {
   vector<Blob<Dtype>*> bottom_vec;
-  Dtype *perturb;
-  if (param_.adversarial() || param_.manifold()) {
-    CUDA_CHECK(cudaMalloc(&perturb, 78400 * sizeof(Dtype)));
+  Dtype *perturb, *manifold_diff;
+  Dtype adversarial, manifold;
+  adversarial = (Dtype) param_.adversarial();
+  manifold = (Dtype) param_.manifold();
+  if (manifold && !adversarial)
+    adversarial = Dtype(3);
+  if (adversarial || manifold) {
+    CUDA_CHECK(cudaMalloc(&perturb, net_->bottom_vecs()[1][0]->count() * sizeof(Dtype)));
+    CUDA_CHECK(cudaMalloc(&manifold_diff, net_->bottom_vecs()[ net_->layers().size() - 2 ][0]->count() * sizeof(Dtype)));
   }
   const int start_iter = iter_;
   const int stop_iter = iter_ + iters;
@@ -246,7 +252,7 @@ void Solver<Dtype>::Step(int iters) {
     net_->set_debug_info(display && param_.debug_info());
     // accumulate the loss and gradient
     Dtype loss = 0, loss2 = 0;
-    if (param_.adversarial() || param_.manifold()) {
+    if (iter_ > 1200 && (adversarial || manifold)) {
      for (int i = 0; i < param_.iter_size(); ++i) {
         loss += net_->ForwardBackwardAdv(bottom_vec);
       }
@@ -266,7 +272,7 @@ void Solver<Dtype>::Step(int iters) {
       smoothed_loss += (loss - losses[idx]) / average_loss;
       losses[idx] = loss;
     }
-    if (param_.adversarial() || param_.manifold()) {
+    if (iter_ > 1200 && (adversarial || manifold)) {
       // adversarial examples generation
       const Dtype* gradX = net_->bottom_vecs()[1][0]->gpu_diff2();
       caffe_gpu_memcpy( net_->bottom_vecs()[1][0]->count() * sizeof(Dtype),
@@ -274,7 +280,7 @@ void Solver<Dtype>::Step(int iters) {
         net_->bottom_vecs()[1][0]->mutable_gpu_data2() );
       caffe_gpu_axpy( net_->bottom_vecs()[1][0]->count(),
         //(Dtype) -1.0 * ( (stop_iter - iter_)*2>stop_iter ? stop_iter : (stop_iter - iter_)*2 ) / stop_iter,
-        (Dtype) -1.0,
+        -adversarial,
         static_cast<const Dtype*>(gradX),
         static_cast<Dtype*>(net_->bottom_vecs()[1][0]->mutable_gpu_data2()) );
       caffe_gpu_trun( net_->bottom_vecs()[1][0]->count(),
@@ -287,13 +293,15 @@ void Solver<Dtype>::Step(int iters) {
       for (int i = 0; i < callbacks_.size(); ++i) {
         callbacks_[i]->on_start();
       }
-      if (param_.adversarial()) {
-        for (int i = 0; i < param_.iter_size(); ++i) {
-          loss2 += net_->ForwardBackward2(bottom_vec);
-        }
-      } else if (param_.manifold()) {
-        for (int i = 0; i < param_.iter_size(); ++i) {
-          loss2 += net_->ForwardBackwardManifold(bottom_vec);
+      if (adversarial) {
+        if (manifold) {
+          for (int i = 0; i < param_.iter_size(); ++i) {
+            loss2 += net_->ForwardBackwardManifold(bottom_vec);
+          }
+        } else {
+          for (int i = 0; i < param_.iter_size(); ++i) {
+            loss2 += net_->ForwardBackward2(bottom_vec);
+          }
         }
       }
       loss2 /= param_.iter_size();
@@ -318,49 +326,111 @@ void Solver<Dtype>::Step(int iters) {
           LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #"
               << score_index++ << ": " << output_name << " = "
               << result_vec[k] << loss_msg_stream.str();
-          if (param_.adversarial() || param_.manifold()) {
-        caffe_gpu_memcpy( net_->bottom_vecs()[1][0]->count() * sizeof(Dtype),
-                  net_->bottom_vecs()[1][0]->gpu_data(),
-                  perturb);
-        caffe_gpu_axpy( net_->bottom_vecs()[1][0]->count(), (Dtype) -1.0,
-                  net_->bottom_vecs()[1][0]->gpu_data2(),
-                  perturb);
-        Dtype sumsq1;
-        caffe_gpu_dot( net_->bottom_vecs()[1][0]->count(), static_cast<const Dtype*>(perturb), static_cast<const Dtype*>(perturb), &sumsq1);
+// FOR DEBUG
+//Dtype sumsq_data = 0;
+//for (int k = 0; k < net_->learnable_params().size(); k++) {
+//sumsq_data += net_->learnable_params()[k]->sumsq_data();
+//}
+//LOG(INFO) << "weight-l2 norm = " << sumsq_data;
+// 2-norm difference between data1 and data2 of the last hidden layer
+          if (iter_ > 1200 && (adversarial || manifold)) {
+            Dtype sumsq1, sumsq2;
+            caffe_gpu_memcpy( net_->bottom_vecs()[1][0]->count() * sizeof(Dtype),
+                      net_->bottom_vecs()[1][0]->gpu_data(),
+                      perturb);
+            caffe_gpu_axpy( net_->bottom_vecs()[1][0]->count(), Dtype(-1),
+                      net_->bottom_vecs()[1][0]->gpu_data2(),
+                      perturb);
+            caffe_gpu_dot( net_->bottom_vecs()[1][0]->count(), static_cast<const Dtype*>(perturb), static_cast<const Dtype*>(perturb), &sumsq1);
 
-        caffe_gpu_memcpy( net_->bottom_vecs()[net_->layers().size()-2][0]->count() * sizeof(Dtype),
-                  net_->bottom_vecs()[net_->layers().size()-2][0]->gpu_data(),
-                  perturb);
-        caffe_gpu_axpy( net_->bottom_vecs()[net_->layers().size()-2][0]->count(), (Dtype) -1.0,
-                  net_->bottom_vecs()[net_->layers().size()-2][0]->gpu_data2(),
-                  perturb);
-        Dtype sumsq2;
-        caffe_gpu_dot( net_->bottom_vecs()[net_->layers().size()-2][0]->count(), static_cast<const Dtype*>(perturb), static_cast<const Dtype*>(perturb), &sumsq2);
+            caffe_gpu_memcpy( net_->bottom_vecs()[net_->layers().size()-2][0]->count() * sizeof(Dtype),
+                      net_->bottom_vecs()[net_->layers().size()-2][0]->gpu_data(),
+                      manifold_diff);
+            caffe_gpu_axpy( net_->bottom_vecs()[net_->layers().size()-2][0]->count(), Dtype(-1),
+                      net_->bottom_vecs()[net_->layers().size()-2][0]->gpu_data2(),
+                      manifold_diff);
+
+            caffe_gpu_dot( net_->bottom_vecs()[net_->layers().size()-2][0]->count(), static_cast<const Dtype*>(manifold_diff), static_cast<const Dtype*>(manifold_diff), &sumsq2);
  
-        LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #100: 2-norm diff = " << sumsq1 / 100 << "->" << sumsq2 / 100;
+            LOG_IF(INFO, Caffe::root_solver()) << "    Train net output #100: 2-norm diff = " << sumsq1 / 100 << "->" << sumsq2 / 100;
           }
         }
       }
     }
 
-    if (param_.adversarial()) {
-      const vector<Blob<Dtype>*>& net_params = net_->learnable_params();
-      for (int param_id = 0; param_id < net_params.size(); ++param_id) {
-        caffe_gpu_axpy( net_params[param_id]->count(), (Dtype) 1.0,
-                  net_params[param_id]->gpu_diff2(),
-                  net_params[param_id]->mutable_gpu_diff());
-        caffe_gpu_scal( net_params[param_id]->count(), (Dtype) 0.5, net_params[param_id]->mutable_gpu_diff() );
-      }
+    // visualization
+    if ((iter_+1)%50000 == 0) {
+      if (adversarial || manifold) {
+        param2file(net_->learnable_params()[0]->cpu_data(), net_->learnable_params()[0]->count(), "W.txt");
+	param2file(net_->learnable_params()[1]->cpu_data(), net_->learnable_params()[1]->count(), "b.txt");
+        param2file(net_->bottom_vecs()[ net_->bottom_vecs().size() - 1 ][1]->cpu_data(), 0, 5, "y.txt");
+        param2file(net_->bottom_vecs()[1][0]->cpu_data(), 0, 784, "X1.txt");
+        param2file(net_->bottom_vecs()[1][0]->cpu_data(), 784, 1568, "X2.txt");
+        param2file(net_->bottom_vecs()[2][0]->cpu_data(), 0, 600, "XX1.txt");
+        param2file(net_->bottom_vecs()[2][0]->cpu_data(), 600, 1200, "XX2.txt");
+        param2file(net_->top_vecs()[ net_->top_vecs().size() - 2 ][0]->cpu_data(), 0, 20, "z.txt");
 
-    } else if (param_.manifold()) {
+        param2file(net_->bottom_vecs()[1][0]->cpu_data2(), 0, 784, "Xadv1.txt");
+        param2file(net_->bottom_vecs()[1][0]->cpu_data2(), 784, 1568, "Xadv2.txt");
+        param2file(net_->bottom_vecs()[2][0]->cpu_data2(), 0, 600, "XXadv1.txt");
+        param2file(net_->bottom_vecs()[2][0]->cpu_data2(), 600, 1200, "XXadv2.txt");
+        param2file(net_->top_vecs()[ net_->top_vecs().size() - 2 ][0]->cpu_data2(), 0, 20, "zadv.txt");
+
+        const vector<Blob<Dtype>*>& net_params = net_->learnable_params();
+        for (int param_id = 0; param_id < net_params.size(); ++param_id) {
+          std::string tmpname = "diff";
+          switch (param_id) {
+            case 0: tmpname = tmpname + "0";break;
+            case 1: tmpname = tmpname + "1";break;
+            case 2: tmpname = tmpname + "2";break;
+            case 3: tmpname = tmpname + "3";break;
+            case 4: tmpname = tmpname + "4";break;
+            case 5: tmpname = tmpname + "5";break;
+          }
+          std::string tmpname1 = tmpname + "_before.txt";
+          std::string tmpname2 = tmpname + "_after1.txt";
+          std::string tmpname3 = tmpname + "_after2.txt";
+          param2file(net_params[param_id]->cpu_diff(), net_params[param_id]->count(), tmpname1.c_str());
+          param2file(net_params[param_id]->cpu_diff2(), net_params[param_id]->count(), tmpname2.c_str());
+          param2file(net_params[param_id]->cpu_diff3(), net_params[param_id]->count(), tmpname3.c_str());
+        }
+      }
+    }
+ 
+    //LOG_IF(INFO, Caffe::root_solver()) << net_->input_blob_indices() << "," << net_->output_blob_indices();
+    if (adversarial) {
       const vector<Blob<Dtype>*>& net_params = net_->learnable_params();
-      for (int param_id = 0; param_id < net_params.size(); ++param_id) {
-        caffe_gpu_axpy( net_params[param_id]->count(), (Dtype)(1.0),
-                  net_params[param_id]->gpu_diff3(),
-                  net_params[param_id]->mutable_gpu_diff2());
-        caffe_gpu_axpy( net_params[param_id]->count(), (Dtype) (param_.manifold()),
-                  net_params[param_id]->gpu_diff2(),
-                  net_params[param_id]->mutable_gpu_diff());
+      if (manifold) {
+        Dtype sumsq;
+        for (int param_id = 0; param_id < net_params.size(); ++param_id) {
+          if ( param_id < 0 ) { // FOR DEBUG
+            caffe_gpu_dot( net_params[param_id]->count(),
+                      static_cast<const Dtype*>(net_params[param_id]->gpu_diff()),
+                      static_cast<const Dtype*>(net_params[param_id]->gpu_diff()), &sumsq);
+            LOG(INFO) << param_id << ":diff:" << sumsq;
+            caffe_gpu_dot( net_params[param_id]->count(),
+                      static_cast<const Dtype*>(net_params[param_id]->gpu_diff2()),
+                      static_cast<const Dtype*>(net_params[param_id]->gpu_diff2()), &sumsq);
+            LOG(INFO) << param_id << ":diff2:" << sumsq;
+            caffe_gpu_dot( net_params[param_id]->count(),
+                      static_cast<const Dtype*>(net_params[param_id]->gpu_data()),
+                      static_cast<const Dtype*>(net_params[param_id]->gpu_data()), &sumsq);
+            LOG(INFO) << param_id << ":W:" << sumsq;
+          }
+          caffe_gpu_axpy( net_params[param_id]->count(), Dtype(1),
+                    net_params[param_id]->gpu_diff3(),
+                    net_params[param_id]->mutable_gpu_diff2());
+          caffe_gpu_axpy( net_params[param_id]->count(), manifold,
+                    net_params[param_id]->gpu_diff2(),
+                    net_params[param_id]->mutable_gpu_diff());
+        }
+      } else {
+        for (int param_id = 0; param_id < net_params.size(); ++param_id) {
+          caffe_gpu_axpy( net_params[param_id]->count(), Dtype(1),
+                    net_params[param_id]->gpu_diff2(),
+                    net_params[param_id]->mutable_gpu_diff());
+          caffe_gpu_scal( net_params[param_id]->count(), Dtype(0.5), net_params[param_id]->mutable_gpu_diff() );
+        }
       }
     }
     ApplyUpdate();
@@ -384,8 +454,9 @@ void Solver<Dtype>::Step(int iters) {
       break;
     }
   }
-  if (param_.adversarial() || param_.manifold()) {
+  if (adversarial || manifold) {
     CUDA_CHECK(cudaFree(perturb));
+    CUDA_CHECK(cudaFree(manifold_diff));
   }
 }
 

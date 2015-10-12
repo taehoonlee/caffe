@@ -346,7 +346,7 @@ void PoolingLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   }
   const Dtype* top_diff;
   Dtype* bottom_diff;
-  if (this->adversarial || this->usingdata2) {
+  if (this->adversarial) {
     top_diff = top[0]->gpu_diff2();
     bottom_diff = bottom[0]->mutable_gpu_diff2();
   } else {
@@ -367,26 +367,63 @@ void PoolingLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       mask = max_idx_.gpu_data();
     }
     // NOLINT_NEXT_LINE(whitespace/operators)
-    MaxPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        count, top_diff, mask, top_mask, top[0]->num(), channels_,
-        height_, width_, pooled_height_, pooled_width_,
-        kernel_h_, kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_,
-        bottom_diff);
+    if (this->manifold) {
+      MaxPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top[0]->gpu_diff2(), mask, top_mask, top[0]->num(), channels_,
+          height_, width_, pooled_height_, pooled_width_,
+          kernel_h_, kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_,
+          bottom[0]->mutable_gpu_diff2());
+      MaxPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top[0]->gpu_diff3(), mask, top_mask, top[0]->num(), channels_,
+          height_, width_, pooled_height_, pooled_width_,
+          kernel_h_, kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_,
+          bottom[0]->mutable_gpu_diff3());
+    } else {
+      MaxPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top_diff, mask, top_mask, top[0]->num(), channels_,
+          height_, width_, pooled_height_, pooled_width_,
+          kernel_h_, kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_,
+          bottom_diff);
+    }
     break;
   case PoolingParameter_PoolMethod_AVE:
     // NOLINT_NEXT_LINE(whitespace/operators)
-    AvePoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        count, top_diff, top[0]->num(), channels_,
-        height_, width_, pooled_height_, pooled_width_, kernel_h_,
-        kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, bottom_diff);
+    if (this->manifold) {
+      AvePoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top[0]->gpu_diff2(), top[0]->num(), channels_,
+          height_, width_, pooled_height_, pooled_width_, kernel_h_,
+          kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, bottom[0]->mutable_gpu_diff2());
+      AvePoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top[0]->gpu_diff3(), top[0]->num(), channels_,
+          height_, width_, pooled_height_, pooled_width_, kernel_h_,
+          kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, bottom[0]->mutable_gpu_diff3());
+    } else {
+      AvePoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, top_diff, top[0]->num(), channels_,
+          height_, width_, pooled_height_, pooled_width_, kernel_h_,
+          kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, bottom_diff);
+    }
     break;
   case PoolingParameter_PoolMethod_STOCHASTIC:
     // NOLINT_NEXT_LINE(whitespace/operators)
-    StoPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        count, rand_idx_.gpu_data(), top_diff,
-        top[0]->num(), channels_, height_, width_, pooled_height_,
-        pooled_width_, kernel_h_, kernel_w_, stride_h_, stride_w_,
-        bottom_diff);
+    if (this->manifold) {
+      StoPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, rand_idx_.gpu_data(), top[0]->gpu_diff2(),
+          top[0]->num(), channels_, height_, width_, pooled_height_,
+          pooled_width_, kernel_h_, kernel_w_, stride_h_, stride_w_,
+          bottom[0]->mutable_gpu_diff2());
+      StoPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, rand_idx_.gpu_data(), top[0]->gpu_diff3(),
+          top[0]->num(), channels_, height_, width_, pooled_height_,
+          pooled_width_, kernel_h_, kernel_w_, stride_h_, stride_w_,
+          bottom[0]->mutable_gpu_diff3());
+    } else {
+      StoPoolBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          count, rand_idx_.gpu_data(), top_diff,
+          top[0]->num(), channels_, height_, width_, pooled_height_,
+          pooled_width_, kernel_h_, kernel_w_, stride_h_, stride_w_,
+          bottom_diff);
+    }
     break;
   default:
     LOG(FATAL) << "Unknown pooling method.";

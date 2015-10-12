@@ -111,7 +111,10 @@ void InnerProductLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       Dtype sumsq;
       for (int n=0; n<100; ++n) {
           caffe_gpu_dot(784, bottom[0]->mutable_gpu_diff2() + bottom[0]->offset(n), bottom[0]->mutable_gpu_diff2() + bottom[0]->offset(n), &sumsq);
-          sumsq = (Dtype) 1.0 / sqrt(sumsq);
+          if ( sumsq < 1e-9 )
+            sumsq = (Dtype) 0.0;
+          else
+            sumsq = (Dtype) 1.0 / sqrt(sumsq);
           caffe_gpu_scal(784, sumsq, bottom[0]->mutable_gpu_diff2() + bottom[0]->offset(n));
       }
   }
