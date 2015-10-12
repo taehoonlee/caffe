@@ -23,11 +23,11 @@ void ConvolutionLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       top_data = top[i]->mutable_gpu_data();
     }
     for (int n = 0; n < this->num_; ++n) {
-      this->forward_gpu_gemm(bottom_data + bottom[i]->offset(n), weight,
-          top_data + top[i]->offset(n));
+      this->forward_gpu_gemm(bottom_data + n * this->bottom_dim_, weight,
+          top_data + n * this->top_dim_);
       if (this->bias_term_) {
         const Dtype* bias = this->blobs_[1]->gpu_data();
-        this->forward_gpu_bias(top_data + top[i]->offset(n), bias);
+        this->forward_gpu_bias(top_data + n * this->top_dim_, bias);
       }
     }
   }
@@ -48,6 +48,7 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       bottom_diff = bottom[i]->mutable_gpu_diff();
     }
     // Bias gradient, if necessary.
+<<<<<<< HEAD
     if (this->bias_term_ && this->param_propagate_down_[1] && !this->adversarial) {
       if (this->manifold) {
         for (int n = 0; n < this->num_; ++n) {
@@ -58,11 +59,18 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         for (int n = 0; n < this->num_; ++n) {
           this->backward_gpu_bias(this->blobs_[1]->mutable_gpu_diff(), top_diff + top[i]->offset(n));
         }
+=======
+    if (this->bias_term_ && this->param_propagate_down_[1]) {
+      Dtype* bias_diff = this->blobs_[1]->mutable_gpu_diff();
+      for (int n = 0; n < this->num_; ++n) {
+        this->backward_gpu_bias(bias_diff, top_diff + n * this->top_dim_);
+>>>>>>> BVLC/master
       }
     }
     if (this->param_propagate_down_[0] || propagate_down[i]) {
       for (int n = 0; n < this->num_; ++n) {
         // gradient w.r.t. weight. Note that we will accumulate diffs.
+<<<<<<< HEAD
         if (this->param_propagate_down_[0] && !this->adversarial) {
           if (this->manifold) {
             this->weight_gpu_gemm(bottom[i]->gpu_data() + bottom[i]->offset(n),
@@ -95,6 +103,16 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           else
             sumsq = (Dtype) 1.0 / sqrt(sumsq);
           caffe_gpu_scal(784, sumsq, bottom_diff + bottom[i]->offset(n));
+=======
+        if (this->param_propagate_down_[0]) {
+          this->weight_gpu_gemm(bottom_data + n * this->bottom_dim_,
+              top_diff + n * this->top_dim_, weight_diff);
+        }
+        // gradient w.r.t. bottom data, if necessary.
+        if (propagate_down[i]) {
+          this->backward_gpu_gemm(top_diff + n * this->top_dim_, weight,
+              bottom_diff + n * this->bottom_dim_);
+>>>>>>> BVLC/master
         }
       }
     }

@@ -261,6 +261,7 @@ class Blob {
 
   const Dtype* cpu_data() const;
   void set_cpu_data(Dtype* data);
+  const int* gpu_shape() const;
   const Dtype* gpu_data() const;
   const Dtype* cpu_data2() const;
   void set_cpu_data2(Dtype* data2);
@@ -324,8 +325,12 @@ class Blob {
   shared_ptr<SyncedMemory> data_;
   shared_ptr<SyncedMemory> data2_;
   shared_ptr<SyncedMemory> diff_;
+<<<<<<< HEAD
   shared_ptr<SyncedMemory> diff2_;
   shared_ptr<SyncedMemory> diff3_;
+=======
+  shared_ptr<SyncedMemory> shape_data_;
+>>>>>>> BVLC/master
   vector<int> shape_;
   int count_;
   int capacity_;
