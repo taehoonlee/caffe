@@ -237,6 +237,7 @@ message SolverParameter {
 
   optional float adversarial = 40 [default = 0.0];
   optional float manifold = 41 [default = 0.0];
+  optional int32 adversarial_iter = 42 [default = 1200];
 }
 
 // A message that stores the solver snapshots

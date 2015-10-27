@@ -784,12 +784,12 @@ void Net<Dtype>::BackwardFromToManifold(int start, int end) {
     bottom_vecs_[start][0]->gpu_data(),
     bottom_vecs_[start][0]->mutable_gpu_diff2() );
   caffe_gpu_axpy( bottom_vecs_[start][0]->count(),
-    (Dtype) -1.0,
+    Dtype(-1),
     static_cast<const Dtype*>(bottom_vecs_[start][0]->gpu_data2()),
     bottom_vecs_[start][0]->mutable_gpu_diff2() );
-  caffe_gpu_scal( bottom_vecs_[start][0]->count(), (Dtype) 0.01, bottom_vecs_[start][0]->mutable_gpu_diff2() );
+  caffe_gpu_scal( bottom_vecs_[start][0]->count(), Dtype(0.01), bottom_vecs_[start][0]->mutable_gpu_diff2() );
   caffe_gpu_axpy( bottom_vecs_[start][0]->count(),
-    (Dtype) -1.0,
+    Dtype(-1),
     static_cast<const Dtype*>(bottom_vecs_[start][0]->gpu_diff2()),
     static_cast<Dtype*>(bottom_vecs_[start][0]->mutable_gpu_diff3()) );
   start--;

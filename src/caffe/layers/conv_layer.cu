@@ -89,12 +89,13 @@ void ConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           this->backward_gpu_gemm(top_diff + n * this->top_dim_, weight,
               bottom_diff + n * this->bottom_dim_);
           Dtype sumsq;
-          caffe_gpu_dot(784, bottom_diff + n * this->bottom_dim_, bottom_diff + n * this->bottom_dim_, &sumsq);
+          caffe_gpu_dot(this->bottom_dim_, bottom_diff + n * this->bottom_dim_, bottom_diff + n * this->bottom_dim_, &sumsq);
+//LOG(INFO) << sumsq;
           if ( sumsq < 1e-9 )
             sumsq = (Dtype) 0.0;
           else
             sumsq = (Dtype) 1.0 / sqrt(sumsq);
-          caffe_gpu_scal(784, sumsq, bottom_diff + n * this->bottom_dim_);
+          caffe_gpu_scal(this->bottom_dim_, sumsq, bottom_diff + n * this->bottom_dim_);
         }
       }
     }
